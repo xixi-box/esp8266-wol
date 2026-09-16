@@ -1,0 +1,13 @@
+name = "esp8266-wol"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+# 自定义域名（需 wangshun.work 已接入本 Cloudflare 账号）
+routes = [
+  { pattern = "wol.wangshun.work", custom_domain = true }
+]
+
+[[kv_namespaces]]
+binding = "CMD"
+# 部署前必填：运行 `npx wrangler kv namespace create CMD`，把返回的 id 粘贴到这里
+id = "c1dce0b873c34f218aef4ed8aa8f8426"

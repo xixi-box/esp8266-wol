@@ -1,0 +1,25 @@
+#pragma once
+
+// 使用方法：把本文件复制为同目录下的 config.h 并填写真实值。
+// config.h 含密码和 token，已被 .gitignore 排除，不会提交。
+
+// 家里路由器的 WiFi（必须是 2.4GHz，ESP8266 不支持 5GHz）
+#define WIFI_SSID         "你的WiFi名称"
+#define WIFI_PASSWORD     "你的WiFi密码"
+
+// Cloudflare Worker 地址，不带 https:// 前缀
+#define WORKER_HOST       "你的Worker域名.example.com"
+
+// 设备鉴权 token：一段长随机字符串，需与 Worker 的 DEVICE_TOKEN secret 完全一致
+// 生成方式：openssl rand -hex 16
+#define DEVICE_TOKEN      "换成长随机字符串"
+
+// 目标电脑有线网卡的 MAC 地址（ipconfig /all 里的"物理地址"）
+static const uint8_t TARGET_MAC[6] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
+
+// ============ 可选调整 ============
+
+#define POLL_INTERVAL_MS      3000UL      // 轮询 Worker 的间隔
+#define HEARTBEAT_INTERVAL_MS 180000UL    // 心跳上报间隔（3分钟，注意 KV 写额度）
+#define AP_AFTER_MS           90000UL     // WiFi 持续连不上多久后开启配置热点
+#define WOL_PORT              9           // WoL 魔术包目标端口

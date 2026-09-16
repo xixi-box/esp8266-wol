@@ -1,0 +1,11 @@
+# 固件：构建产物与含密码的配置
+firmware/.pio/
+firmware/include/config.h
+
+# Worker：依赖与本地密钥
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
+
+# 串口调试日志（含内网信息）
+firmware/*.log

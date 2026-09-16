@@ -9,3 +9,6 @@ worker/.dev.vars
 
 # 串口调试日志（含内网信息）
 firmware/*.log
+
+# OTA 测试临时文件
+.fwmeta

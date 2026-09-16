@@ -58,6 +58,7 @@ npx wrangler deploy
 - **开机按钮**：点击后指令经 Cloudflare 中转，ESP8266 在 3 秒内收到并广播魔术包
 - **电脑状态**：设备每 30 秒 ping 一次电脑，页面实时显示电脑开关机——配合 UU 远程等
   远程桌面工具：点开机 → 看到"电脑状态：在线" → 直接连接
+- **远程关机**：电脑在线时页面出现红色关机按钮，确认后设备调用电脑端代理优雅关机
 - **设置**：可远程修改唤醒器的 WiFi 名称/密码、目标网卡 MAC 和电脑 IP，设备在 3 分钟内心跳时自动应用
 - 也可以把该链接存成手机书签/快捷方式
 
@@ -99,3 +100,21 @@ npx wrangler kv key put firmware.ver "Sep 16 2026 21:13:41" --binding=CMD --remo
 设备在下次心跳（≤3 分钟）发现版本不同会自动下载、校验 MD5 并重启升级。
 注意：下载 400+KB 固件对 WiFi 信号要求较高，弱信号下可能跨多个心跳周期重试；
 升级失败设备会继续运行旧固件，不会变砖。
+
+### 远程关机（电脑端代理，一次性安装）
+
+关机无法靠魔术包（那是网卡硬件行为），需要电脑常驻一个小代理（SYSTEM 账户
+开机自启，登录前即生效）。管理员 PowerShell 执行：
+
+```powershell
+# 1. 放行端口
+netsh advfirewall firewall add rule name="WoL-Agent-8899" dir=in action=allow protocol=TCP localport=8899 profile=any
+# 2. 注册开机自启任务（pythonw 路径按实际修改；token 自生成，需与固件 config.h 的 AGENT_TOKEN 一致）
+$action = New-ScheduledTaskAction -Execute "D:\dev\anaconda\pythonw.exe" -Argument '"G:\project\esp8266-wol\tools\pc_agent.py" <token> 8899'
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+Register-ScheduledTask -TaskName "WoL-ShutdownAgent" -Action $action -Trigger $trigger -Principal $principal -Force
+```
+
+安全边界：代理仅监听局域网（路由器 NAT 挡住外网），带随机 token 鉴权；
+测试可设环境变量 `AGENT_DRYRUN=1` 只应答不真关机。

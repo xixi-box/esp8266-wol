@@ -48,3 +48,6 @@ cd worker && npx wrangler deploy  # 部署
   不同即自动升级重启；弱信号（-83dBm）下大文件下载可能跨多个心跳周期重试；
   升级失败自动回退继续跑旧固件。自愈兜底：连续 20 次 TLS 握手失败自动重启。
 - 用户侧鉴权已加 HttpOnly Cookie（wol_token），URL token 仅首次使用后即从地址栏抹除。
+- 远程关机已上线：`/api/off` 写 shutdown 命令 → 设备 HTTP 调用电脑代理
+  （tools/pc_agent.py，SYSTEM 自启任务 WoL-ShutdownAgent，端口 8899，token 同固件
+  AGENT_TOKEN）→ 优雅关机。代理有 /health 探活端点与 AGENT_DRYRUN 测试模式。

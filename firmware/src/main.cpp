@@ -20,6 +20,7 @@
 #include <Arduino.h>
 #include <DNSServer.h>
 #include <EEPROM.h>
+#include <ESP8266HTTPUpdate.h>
 #include <ESP8266Ping.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
@@ -27,6 +28,9 @@
 #include <WiFiUDP.h>
 
 #include "config.h"
+
+// 固件版本（编译时间戳），OTA 时与 Worker 上的 firmware.ver 比对
+#define FW_VER __DATE__ " " __TIME__
 
 // ---------------------------------------------------------------- 配置存取
 
@@ -60,6 +64,7 @@ static uint32_t lastPcPingMs = 0;
 static bool pcOnline = false;
 static int lastReportedPc = -1;  // -1 = 尚未上报过（开机首测必报）
 static uint8_t pcMissCount = 0;
+static uint8_t tlsFailCount = 0;  // 连续 TLS 握手失败计数，超限重启自愈
 
 static uint32_t crc32buf(const uint8_t* data, size_t len) {
   uint32_t crc = 0xFFFFFFFF;
@@ -197,8 +202,17 @@ static bool ensureTls() {
   tlsClient.stop();  // 清理半死连接
   if (WiFi.status() != WL_CONNECTED) return false;
   bool ok = tlsClient.connect(WORKER_HOST, 443);
-  if (!ok) Serial.println("[TLS] 握手失败，下轮重试");
-  return ok;
+  if (!ok) {
+    Serial.println("[TLS] 握手失败，下轮重试");
+    if (++tlsFailCount >= 20) {  // WiFi 正常但连续约 1 分钟握手失败 → 重启自愈
+      Serial.println("[TLS] 连续多次失败，重启自愈");
+      tlsFailCount = 0;
+      ESP.restart();
+    }
+    return false;
+  }
+  tlsFailCount = 0;
+  return true;
 }
 
 // 发送请求并返回响应 body；网络失败或非 200 返回空串
@@ -350,14 +364,48 @@ static void applyRemoteConfig(const String& resp) {
   }
 }
 
+// ---------------------------------------------------------------- OTA 远程升级
+
+static String urlEncode(const String& s) {
+  String o;
+  for (unsigned i = 0; i < s.length(); i++) {
+    char c = s[i];
+    if (isalnum((unsigned char)c) || c == '-' || c == '.' || c == '_' || c == '~') o += c;
+    else { char b[4]; snprintf(b, sizeof(b), "%%%02X", (unsigned char)c); o += b; }
+  }
+  return o;
+}
+
+// 心跳响应带 ota 字段（Worker 上固件版本比本机新）时，下载新固件自动升级。
+// 成功会直接重启进新固件；失败则打印原因，继续运行当前固件。
+static void checkOta(const String& resp) {
+  char ver[40];
+  if (!jsonStr(resp, "ota", ver, sizeof(ver)) || !ver[0] || strcmp(ver, FW_VER) == 0) return;
+  Serial.printf("[OTA] 发现新固件 %s，开始升级（约 10 秒，期间设备会重启）\n", ver);
+  tlsClient.stop();
+  tlsClient.setBufferSizes(16384, 1024);  // OTA 临时换大缓冲：512 字节小缓冲扛不住大流量下载
+  ESPhttpUpdate.rebootOnUpdate(true);  // 成功后自动重启进新固件
+  ESPhttpUpdate.setClientTimeout(30000);  // 432KB 经 MFLN+TLS 下载较慢，默认 8s 读超时不够
+  tlsClient.setTimeout(30000);
+  String url = String("https://") + WORKER_HOST + "/api/firmware?token=" DEVICE_TOKEN +
+               "&ver=" + urlEncode(FW_VER);
+  t_httpUpdate_return r = ESPhttpUpdate.update(tlsClient, url, String(FW_VER));
+  tlsClient.setBufferSizes(512, 512);  // 恢复小缓冲供日常轮询（成功则已重启不会走到这）
+  if (r != HTTP_UPDATE_OK) {
+    Serial.printf("[OTA] 升级失败 code=%d err=%d (%s)，继续运行当前固件\n",
+                  (int)r, ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+  }
+}
+
 static void heartbeat() {
   String body = String("{\"rssi\":") + WiFi.RSSI() +
                 ",\"heap\":" + ESP.getFreeHeap() +
-                ",\"up\":" + millis() / 1000 + "}";
+                ",\"up\":" + millis() / 1000 + ",\"fw\":\"" FW_VER "\"}";
   String resp = httpRequest("POST", "/api/heartbeat", body);
   if (resp.length()) {
     Serial.println("[Hb] 心跳已上报");
     applyRemoteConfig(resp);
+    checkOta(resp);
   }
 }
 

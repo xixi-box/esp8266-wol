@@ -44,3 +44,7 @@ cd worker && npx wrangler deploy  # 部署
   无线 MediaTek MT7922 的 WoWLAN 已启用（仅限睡眠唤醒）。设备 WiFi 信号 -83dBm 偏弱，可用。
 - 电脑状态监测已上线：设备每 30 秒 ping 电脑（IP 可远程配置），边沿触发上报；
   电脑防火墙需放行 ICMP 回显（已建规则 WoL-ICMP-ESP8266），建议路由器绑定静态 IP。
+- OTA 已上线：`/api/firmware` + KV 三件套（firmware.bin/ver/md5），设备心跳发现版本
+  不同即自动升级重启；弱信号（-83dBm）下大文件下载可能跨多个心跳周期重试；
+  升级失败自动回退继续跑旧固件。自愈兜底：连续 20 次 TLS 握手失败自动重启。
+- 用户侧鉴权已加 HttpOnly Cookie（wol_token），URL token 仅首次使用后即从地址栏抹除。

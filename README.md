@@ -78,3 +78,24 @@ npx wrangler deploy
 开放热点；手机连上后访问 `http://192.168.4.1` 即可重新配置（板载 LED 慢闪
 表示处于热点模式）。配置保存在设备 EEPROM 中，Worker 设置页的远程配置
 （rev 版本号新于本机时）会覆盖它。
+
+### 固件远程升级（OTA）
+
+无需 USB 线即可升级固件。三步：
+
+```bash
+pio run                                                    # 本地构建新固件
+npx wrangler kv key put firmware.bin --path .pio/build/esp12f/firmware.bin --binding=CMD --remote
+npx wrangler kv key put firmware.md5 <固件md5> --binding=CMD --remote
+```
+
+再写入版本戳（构建产物内嵌的编译时间，如 `Sep 16 2026 21:13:41`，
+可从串口启动日志或心跳的 fw 字段读到当前值）：
+
+```bash
+npx wrangler kv key put firmware.ver "Sep 16 2026 21:13:41" --binding=CMD --remote
+```
+
+设备在下次心跳（≤3 分钟）发现版本不同会自动下载、校验 MD5 并重启升级。
+注意：下载 400+KB 固件对 WiFi 信号要求较高，弱信号下可能跨多个心跳周期重试；
+升级失败设备会继续运行旧固件，不会变砖。

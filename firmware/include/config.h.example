@@ -21,5 +21,7 @@ static const uint8_t TARGET_MAC[6] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
 
 #define POLL_INTERVAL_MS      3000UL      // 轮询 Worker 的间隔
 #define HEARTBEAT_INTERVAL_MS 180000UL    // 心跳上报间隔（3分钟，注意 KV 写额度）
+#define DEFAULT_PC_IP     "192.168.8.100"  // 电脑局域网 IP（用于开机状态监测）
+#define PC_PING_INTERVAL_MS   30000UL     // 电脑 ping 检测间隔
 #define AP_AFTER_MS           90000UL     // WiFi 持续连不上多久后开启配置热点
 #define WOL_PORT              9           // WoL 魔术包目标端口

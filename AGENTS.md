@@ -5,7 +5,8 @@
 
 ## 结构
 
-- `firmware/` — PlatformIO 项目（board=nodemcuv2，对应 ESP-12F + CH340 载板，串口 COM10）
+- `firmware/` — PlatformIO 项目（board=nodemcuv2，对应 ESP-12F + CH340 载板；COM 号随 USB
+  插拔变化，用 `pio device list` 查）
 - `worker/`   — Cloudflare Worker，KV 绑定 `CMD`，secrets：`DEVICE_TOKEN`/`USER_TOKEN`
 - `tools/`    — 辅助脚本（`dns_watch.py` 直查注册局监控 NS 切换，依赖 dnspython）
 
@@ -14,7 +15,7 @@
 - **线上入口是 `https://wol.wangshun.work/?token=<USER_TOKEN>`**（自定义域，wangshun.work
   zone 在 CF，9 条 A 记录灰云直连阿里云 120.26.186.0 是站长的个人站服务，勿改勿开代理）。
   `*.workers.dev` 在国内被墙（DNS 污染+SNI 阻断），已弃用，勿再作为入口。
-- KV 免费额度写 1000 次/天：`/api/command` 轮询必须纯读，心跳 3 分钟一次（480 写/天），**不要调高频率**。
+- KV 免费额度写 1000 次/天：`/api/command` 轮询必须纯读，心跳 3 分钟一次（480 写/天），电脑状态边沿触发上报（/api/pcstate），**不要调高频率**。
 - 幂等设计：命令带 id，设备轮询带 `?acked=`，Worker 比对后决定下发；改协议时勿破坏此机制。
 - `firmware/include/config.h` 含 WiFi 密码和 token，已被 .gitignore 排除，不要提交。
 - ESP8266 只支持 2.4GHz WiFi；TLS 用 BearSSL + MFLN(512) + 会话恢复，证书校验为
@@ -41,3 +42,5 @@ cd worker && npx wrangler deploy  # 部署
   ③ CF KV 跨区域最终一致，极速连发两条命令可能只执行最后一条（可接受）。
 - 目标电脑：台式机，有线网卡 Realtek 2.5GbE（WoL 已全链路开启，**需插网线**才能关机唤醒），
   无线 MediaTek MT7922 的 WoWLAN 已启用（仅限睡眠唤醒）。设备 WiFi 信号 -83dBm 偏弱，可用。
+- 电脑状态监测已上线：设备每 30 秒 ping 电脑（IP 可远程配置），边沿触发上报；
+  电脑防火墙需放行 ICMP 回显（已建规则 WoL-ICMP-ESP8266），建议路由器绑定静态 IP。

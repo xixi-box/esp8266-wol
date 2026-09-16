@@ -36,7 +36,7 @@ function isUser(url, env) {
   return url.searchParams.get("token") === env.USER_TOKEN;
 }
 
-function statusPage(online, cfg) {
+function statusPage(online, pcOnline, pcTs, cfg) {
   return `<!doctype html>
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -57,6 +57,7 @@ function statusPage(online, cfg) {
 </style></head><body>
 <h2>🖥️ 远程开机</h2>
 <div class="st">唤醒器状态：<span id="sttext" class="${online ? "ok" : "bad"}">${online ? "在线" : "离线"}</span><span id="stextra" class="st"></span></div>
+<div class="st">电脑状态：<span id="pctext" class="${pcOnline ? "ok" : "bad"}">${pcOnline ? "在线" : "离线"}</span><span id="pcextra" class="st">${pcTs ? "" : "（暂无数据）"}</span></div>
 <button id="b" onclick="wake()">开　机</button>
 <div id="msg"></div>
 <details><summary>⚙️ 设置（WiFi / 目标 MAC）</summary>
@@ -64,6 +65,7 @@ function statusPage(online, cfg) {
 <label>WiFi 名称（2.4GHz）<input name="ssid" value="${cfg ? esc(cfg.ssid) : ""}" maxlength="32"></label>
 <label>WiFi 密码<input name="pass" type="password" placeholder="留空保持不变" maxlength="64"></label>
 <label>目标网卡 MAC（12 位十六进制，可带 : - 分隔符）<input name="mac" value="${cfg ? esc(cfg.mac) : ""}" placeholder="如 B025AA89BEF5"></label>
+<label>电脑局域网 IP（用于开机状态监测）<input name="pcip" value="${cfg && cfg.pc_ip ? esc(cfg.pc_ip) : ""}" placeholder="留空保持不变"></label>
 <button type="submit">保存设置</button>
 </form>
 <div id="cfgmsg"></div>
@@ -81,6 +83,12 @@ function refreshStatus(){
       el.className = j.online ? 'ok' : 'bad';
       ex.textContent = j.online ? '' :
         (j.ts ? '（最后心跳 ' + new Date(j.ts).toLocaleTimeString('zh-CN') + '）' : '（从未上报）');
+      var pe = document.getElementById('pctext');
+      var pex = document.getElementById('pcextra');
+      pe.textContent = j.pcOnline ? '在线' : '离线';
+      pe.className = j.pcOnline ? 'ok' : 'bad';
+      pex.textContent = j.pcOnline ? '' :
+        (j.pcTs ? '（最后在线 ' + new Date(j.pcTs).toLocaleTimeString('zh-CN') + '）' : '（暂无数据）');
     })
     .catch(function(){ /* 保持当前显示 */ });
 }
@@ -107,7 +115,7 @@ function saveCfg(ev){
   fetch('/api/config?token=' + encodeURIComponent(token), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ssid: f.ssid.value.trim(), pass: f.pass.value, mac: f.mac.value.trim() })
+      body: JSON.stringify({ ssid: f.ssid.value.trim(), pass: f.pass.value, mac: f.mac.value.trim(), pc_ip: f.pcip.value.trim() })
     })
     .then(function(r){ return r.json().then(function(j){ return { s: r.status, j: j }; }); })
     .then(function(x){
@@ -147,6 +155,14 @@ export default {
       return json(cfg ? { ok: true, config: cfg } : { ok: true });
     }
 
+    // ---- PC 开关机状态（设备边沿触发上报，仅变化时写 KV） ----
+    if (pathname === "/api/pcstate" && request.method === "POST") {
+      if (!isDevice(request, env)) return json({ error: "unauthorized" }, 401);
+      const body = await request.json().catch(() => null);
+      await env.CMD.put("pcstate", JSON.stringify({ ts: Date.now(), online: !!body?.online }));
+      return json({ ok: true });
+    }
+
     // ---- 触发开机：写入命令 ----
     if (pathname === "/api/wake" && request.method === "POST") {
       if (!isUser(url, env)) return json({ error: "unauthorized" }, 401);
@@ -162,13 +178,16 @@ export default {
       const ssid = String(body?.ssid ?? "").trim();
       const pass = String(body?.pass ?? "");
       const mac = normalizeMac(body?.mac);
+      const pcIp = String(body?.pc_ip ?? "").trim();
       if (!ssid || ssid.length > 32) return json({ error: "WiFi 名称无效（1-32 字符）" }, 400);
       if (pass.length > 64) return json({ error: "密码过长（≤64 字符）" }, 400);
       if (mac.length !== 12) return json({ error: "MAC 无效（需要 12 位十六进制）" }, 400);
+      if (pcIp && !/^\d{1,3}(\.\d{1,3}){3}$/.test(pcIp)) return json({ error: "电脑 IP 格式无效" }, 400);
       const cur = await env.CMD.get("config", "json");
       const finalPass = pass || cur?.pass || "";
+      const finalPcIp = pcIp || cur?.pc_ip || "";
       const rev = Date.now();
-      await env.CMD.put("config", JSON.stringify({ rev, ssid, pass: finalPass, mac }));
+      await env.CMD.put("config", JSON.stringify({ rev, ssid, pass: finalPass, mac, pc_ip: finalPcIp }));
       return json({ ok: true, rev });
     }
 
@@ -176,8 +195,10 @@ export default {
     if (pathname === "/api/status" && request.method === "GET") {
       if (!isUser(url, env)) return json({ error: "unauthorized" }, 401);
       const hb = await env.CMD.get("heartbeat", "json");
+      const pc = await env.CMD.get("pcstate", "json");
       const online = !!hb && Date.now() - hb.ts < 6 * 60_000;
-      return json({ online, ts: hb?.ts ?? 0 });
+      const pcOnline = !!pc && Date.now() - pc.ts < 10 * 60_000;
+      return json({ online, ts: hb?.ts ?? 0, pcOnline, pcTs: pc?.ts ?? 0 });
     }
 
     // ---- 状态 + 一键开机 + 设置页面 ----
@@ -185,8 +206,10 @@ export default {
       if (!isUser(url, env)) return new Response("unauthorized", { status: 401 });
       const hb = await env.CMD.get("heartbeat", "json");
       const cfg = await env.CMD.get("config", "json");
+      const pc = await env.CMD.get("pcstate", "json");
       const online = !!hb && Date.now() - hb.ts < 6 * 60_000;
-      return new Response(statusPage(online, cfg), {
+      const pcOnline = !!pc && Date.now() - pc.ts < 10 * 60_000;
+      return new Response(statusPage(online, pcOnline, pc?.ts ?? 0, cfg), {
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
       });
     }

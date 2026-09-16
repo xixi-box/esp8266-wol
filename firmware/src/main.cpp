@@ -20,6 +20,7 @@
 #include <Arduino.h>
 #include <DNSServer.h>
 #include <EEPROM.h>
+#include <ESP8266Ping.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
@@ -34,6 +35,7 @@ struct DeviceConfig {
   char ssid[33];   // 802.11 SSID 最长 32 字节
   char pass[65];   // WPA2 密码最长 64 字节
   uint8_t mac[6];
+  char pc_ip[16];  // 电脑局域网 IP，ping 它判断开关机
   int64_t rev;     // 远程配置版本号（毫秒时间戳，超出 32 位），0 = 出厂默认
   uint32_t crc;
 };
@@ -53,6 +55,12 @@ static uint32_t lastPollMs = 0;
 static uint32_t lastHeartbeatMs = 0;
 static int64_t ackedId = 0;  // 已执行的最后命令 id，作为幂等游标（毫秒时间戳，64 位）
 
+// 电脑开关机监测（边沿触发上报：仅状态变化时调 /api/pcstate，节省 KV 写额度）
+static uint32_t lastPcPingMs = 0;
+static bool pcOnline = false;
+static int lastReportedPc = -1;  // -1 = 尚未上报过（开机首测必报）
+static uint8_t pcMissCount = 0;
+
 static uint32_t crc32buf(const uint8_t* data, size_t len) {
   uint32_t crc = 0xFFFFFFFF;
   while (len--) {
@@ -67,6 +75,7 @@ static void setDefaults() {
   strlcpy(cfg.ssid, WIFI_SSID, sizeof(cfg.ssid));
   strlcpy(cfg.pass, WIFI_PASSWORD, sizeof(cfg.pass));
   memcpy(cfg.mac, TARGET_MAC, 6);
+  strlcpy(cfg.pc_ip, DEFAULT_PC_IP, sizeof(cfg.pc_ip));
   cfg.rev = 0;
 }
 
@@ -319,6 +328,11 @@ static void applyRemoteConfig(const String& resp) {
     uint8_t mac[6];
     if (parseMac(macStr, mac)) memcpy(next.mac, mac, 6);
   }
+  char ipStr[18];
+  if (jsonStr(resp, "pc_ip", ipStr, sizeof(ipStr)) && ipStr[0]) {
+    IPAddress tmp;
+    if (tmp.fromString(ipStr)) strlcpy(next.pc_ip, ipStr, sizeof(next.pc_ip));
+  }
   if (!next.ssid[0]) {
     Serial.println("[Cfg] 忽略空 SSID 的远程配置");
     return;
@@ -345,6 +359,29 @@ static void heartbeat() {
     Serial.println("[Hb] 心跳已上报");
     applyRemoteConfig(resp);
   }
+}
+
+// ---------------------------------------------------------------- 电脑开关机监测
+
+// 状态变化才上报；上报失败不更新游标，下一轮自动重试
+static void reportPcState() {
+  String body = String("{\"online\":") + (pcOnline ? 1 : 0) + "}";
+  if (httpRequest("POST", "/api/pcstate", body).length()) {
+    lastReportedPc = pcOnline;
+    Serial.printf("[PC] 状态上报: %s\n", pcOnline ? "在线" : "离线");
+  }
+}
+
+static void checkPc() {
+  IPAddress pcIp;
+  bool ok = pcIp.fromString(cfg.pc_ip) && Ping.ping(pcIp, 2);
+  if (ok) {
+    pcMissCount = 0;
+    pcOnline = true;
+  } else if (++pcMissCount >= 2) {  // 防抖：连续 2 次 ping 失败才判离线
+    pcOnline = false;
+  }
+  if ((int)pcOnline != lastReportedPc) reportPcState();
 }
 
 // ---------------------------------------------------------------- 应急配置热点
@@ -466,6 +503,10 @@ void loop() {
   if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
     lastHeartbeatMs = now;
     if (ensureWiFi()) heartbeat();
+  }
+  if (now - lastPcPingMs >= PC_PING_INTERVAL_MS) {
+    lastPcPingMs = now;
+    if (WiFi.status() == WL_CONNECTED && cfg.pc_ip[0]) checkPc();
   }
   delay(10);
 }

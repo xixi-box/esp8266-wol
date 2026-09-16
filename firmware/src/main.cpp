@@ -20,7 +20,6 @@
 #include <Arduino.h>
 #include <DNSServer.h>
 #include <EEPROM.h>
-#include <ESP8266HTTPClient.h>
 #include <ESP8266HTTPUpdate.h>
 #include <ESP8266Ping.h>
 #include <ESP8266WebServer.h>
@@ -286,24 +285,6 @@ static String httpRequest(const String& method, const String& path, const String
   return resp;
 }
 
-// ---------------------------------------------------------------- 远程关机（电脑端代理）
-
-// 调用电脑上常驻的关机代理（tools/pc_agent.py），由它执行 Windows 优雅关机
-static void shutdownPc() {
-  WiFiClient lan;
-  HTTPClient http;
-  http.setTimeout(5000);
-  String url = String("http://") + cfg.pc_ip + ":" + AGENT_PORT + "/shutdown?token=" AGENT_TOKEN;
-  if (http.begin(lan, url)) {
-    int code = http.GET();
-    Serial.printf("[Cmd] 关机指令 → 电脑代理 HTTP %d%s\n", code,
-                  code == 200 ? "" : "（电脑不在线或代理未运行）");
-    http.end();
-  } else {
-    Serial.println("[Cmd] 关机代理连接失败（电脑不在线或代理未运行）");
-  }
-}
-
 // ---------------------------------------------------------------- WoL
 
 // 发送 WoL 魔术包：6 字节 0xFF + 重复 16 次目标 MAC
@@ -340,10 +321,6 @@ static void poll() {
   if (body.indexOf("\"wake\"") >= 0 && id > ackedId) {
     Serial.printf("[Cmd] 收到 wake 命令 id=%lld\n", (long long)id);
     sendMagicPacket();
-    ackedId = id;
-  } else if (body.indexOf("\"shutdown\"") >= 0 && id > ackedId) {
-    Serial.printf("[Cmd] 收到关机命令 id=%lld\n", (long long)id);
-    shutdownPc();
     ackedId = id;
   } else if (id > ackedId) {
     ackedId = id;  // 无 wake 只推进游标（例如设备重启后追上进度）
@@ -423,7 +400,7 @@ static void checkOta(const String& resp) {
 static void heartbeat() {
   String body = String("{\"rssi\":") + WiFi.RSSI() +
                 ",\"heap\":" + ESP.getFreeHeap() +
-                ",\"up\":" + millis() / 1000 + ",\"fw\":\"" FW_VER "\"}";
+                ",\"up\":" + millis() / 1000 + ",\"pc\":" + (pcOnline ? 1 : 0) + ",\"fw\":\"" FW_VER "\"}";
   String resp = httpRequest("POST", "/api/heartbeat", body);
   if (resp.length()) {
     Serial.println("[Hb] 心跳已上报");
@@ -547,6 +524,7 @@ void setup() {
   setupTls();
   bootMs = millis();
   lastHeartbeatMs = millis() - HEARTBEAT_INTERVAL_MS;  // 让首次心跳在开机后立即发生
+  lastPcPingMs = millis() - PC_PING_INTERVAL_MS;       // 首次 ping 同样立即发生（先于心跳）
   ensureWiFi();
 }
 
@@ -571,13 +549,13 @@ void loop() {
     lastPollMs = now;
     if (ensureWiFi()) poll();
   }
-  if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
-    lastHeartbeatMs = now;
-    if (ensureWiFi()) heartbeat();
-  }
   if (now - lastPcPingMs >= PC_PING_INTERVAL_MS) {
     lastPcPingMs = now;
     if (WiFi.status() == WL_CONNECTED && cfg.pc_ip[0]) checkPc();
+  }
+  if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
+    lastHeartbeatMs = now;
+    if (ensureWiFi()) heartbeat();
   }
   delay(10);
 }

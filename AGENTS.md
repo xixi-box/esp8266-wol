@@ -67,3 +67,9 @@ cd worker && npx wrangler deploy  # 部署
 - OTA 版本戳必须取 bin 中**最后一个**编译时间匹配（bin 内含 2019 年 bootloader 的
   时间戳在前，正则取第一个就会张冠李戴）；版本号写错会导致设备 OTA 死循环（每心跳
   重刷同一包）。OTA 弱信号下曾 0 成功，setClientTimeout 已提至 120 秒，仍失败就 USB 兜底。
+- 服务器容器运维（2026-09-20）：服务器 systemd 服务 wol-server-ops（127.0.0.1:18777，
+  /root/wol_server_ops.py，token 见 HA shell_command）每 60 秒发布容器状态/用量到
+  server/container/<名>/{state,usage}，并接收白名单容器的 start/stop/restart；HA 侧
+  10 个 MQTT 容器开关 + 10 个用量传感器（设备"服务器"）+ wol_docker_dispatch 自动化。
+  排除项：homeassistant/mosquitto/glances/cad2shp 不可远程启停。教训：MQTT 主题取
+  容器名用 split('/')[-2]（[-1] 是动作后缀）。

@@ -62,3 +62,8 @@ cd worker && npx wrangler deploy  # 部署
   **命令主题**载荷（wake/noop），state_topic 的值要用 state_on/state_off 声明（on/off），
   缺了开关状态会永远 unknown。临时调试可用 http: api_password，但新版 HA 已移除该
   选项，用完必须删（会级联搞挂 http/websocket/api）。
+- 远程关机已恢复（2026-09-20，脚本代理方案）：/api/off + tools/pc_agent.py +
+  计划任务 WoL-ShutdownAgent（SYSTEM 自启）+ 防火墙 8899。网页/HA/vivo 三个入口均有按钮。
+- OTA 版本戳必须取 bin 中**最后一个**编译时间匹配（bin 内含 2019 年 bootloader 的
+  时间戳在前，正则取第一个就会张冠李戴）；版本号写错会导致设备 OTA 死循环（每心跳
+  重刷同一包）。OTA 弱信号下曾 0 成功，setClientTimeout 已提至 120 秒，仍失败就 USB 兜底。

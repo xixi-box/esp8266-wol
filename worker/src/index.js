@@ -59,6 +59,8 @@ function statusPage(online, pcState, pcTs, cfg) {
  body{font-family:system-ui,sans-serif;max-width:460px;margin:6vh auto;padding:0 16px;color:#1f2937}
  button{font-size:18px;padding:14px 40px;border-radius:12px;border:0;background:#2563eb;color:#fff;width:100%;cursor:pointer}
  button:disabled{background:#9ca3af;cursor:default}
+ #offbtn{margin-top:12px;background:#fff;color:#dc2626;border:1.5px solid #fecaca;font-size:15px;padding:10px}
+ #offbtn:disabled{color:#9ca3af;border-color:#e5e7eb}
  .st{margin:16px 0;color:#6b7280}
  .ok{color:#16a34a;font-weight:600}.bad{color:#dc2626;font-weight:600}
  .wait{color:#d97706;font-weight:600}
@@ -73,6 +75,7 @@ function statusPage(online, pcState, pcTs, cfg) {
 <div class="st">唤醒器状态：<span id="sttext" class="${online ? "ok" : "bad"}">${online ? "在线" : "离线"}</span><span id="stextra" class="st"></span></div>
 <div class="st">电脑状态：<span id="pctext" class="${pcState === "online" ? "ok" : pcState === "waking" ? "wait" : "bad"}">${pcState === "online" ? "在线" : pcState === "waking" ? "待唤醒" : "离线"}</span><span id="pcextra" class="st">${pcTs ? "" : "（暂无数据）"}</span></div>
 <button id="b" onclick="wake()">开　机</button>
+<button id="offbtn" onclick="askOff()" style="display:${pcState === "online" ? "block" : "none"}">⏻ 远程关机</button>
 <div id="msg"></div>
 <details><summary>⚙️ 设置（WiFi / 目标 MAC）</summary>
 <form onsubmit="return saveCfg(event)">
@@ -104,6 +107,7 @@ function refreshStatus(){
       pex.textContent = j.pcState === 'online' ? '' :
         (j.pcState === 'waking' ? '（已发送开机指令，等待电脑上线）' :
          (j.pcTs ? '（最后在线 ' + new Date(j.pcTs).toLocaleTimeString('zh-CN') + '）' : '（暂无数据）'));
+      document.getElementById('offbtn').style.display = j.pcState === 'online' ? 'block' : 'none';
     })
     .catch(function(){ /* 保持当前显示 */ });
 }
@@ -143,6 +147,22 @@ function wake(){
     .catch(function(){
       m.textContent = '网络错误，请重试'; m.style.color = '#dc2626';
       b.disabled = false; b.textContent = '重　试';
+    });
+}
+function askOff(){
+  if (!confirm('确定远程关机？')) return;
+  var ob = document.getElementById('offbtn'), m = document.getElementById('msg');
+  ob.disabled = true; ob.textContent = '发送中…';
+  fetch('/api/off', { method: 'POST' })
+    .then(function(r){ return r.status; })
+    .then(function(s){
+      if (s === 200) { m.textContent = '关机指令已发送，电脑状态将在约 1 分钟内变为离线'; m.style.color = '#d97706'; }
+      else { m.textContent = '发送失败（HTTP ' + s + '）'; m.style.color = '#dc2626'; }
+      ob.disabled = false; ob.textContent = '⏻ 远程关机';
+    })
+    .catch(function(){
+      m.textContent = '网络错误，请重试'; m.style.color = '#dc2626';
+      ob.disabled = false; ob.textContent = '⏻ 远程关机';
     });
 }
 function saveCfg(ev){
@@ -206,6 +226,14 @@ export default {
       if (!isUser(request, url, env)) return json({ error: "unauthorized" }, 401);
       const id = Date.now();
       await env.CMD.put("cmd", JSON.stringify({ command: "wake", id, ts: id }));
+      return json({ ok: true, id });
+    }
+
+    // ---- 触发远程关机（电脑需常驻 tools/pc_agent.py 代理） ----
+    if (pathname === "/api/off" && request.method === "POST") {
+      if (!isUser(request, url, env)) return json({ error: "unauthorized" }, 401);
+      const id = Date.now();
+      await env.CMD.put("cmd", JSON.stringify({ command: "shutdown", id, ts: id }));
       return json({ ok: true, id });
     }
 

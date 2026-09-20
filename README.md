@@ -138,3 +138,19 @@ target:
 （毫秒级、零云端依赖、无需 token），本云端路径留给"HA 也不在家"的场景。
 可选：用 HA `rest` 平台每分钟读取 `/api/status`，把电脑在线状态也搬进仪表盘。
 
+
+### 远程关机（电脑端代理）
+
+关机无法靠魔术包（网卡硬件行为），需电脑常驻小代理（SYSTEM 账户开机自启，
+登录前即生效）。管理员 PowerShell：
+
+```powershell
+netsh advfirewall firewall add rule name="WoL-Agent-8899" dir=in action=allow protocol=TCP localport=8899 profile=any
+$action = New-ScheduledTaskAction -Execute "D:\dev\anaconda\pythonw.exe" -Argument '"G:\project\esp8266-wol\tools\pc_agent.py" <token> 8899'
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+Register-ScheduledTask -TaskName "WoL-ShutdownAgent" -Action $action -Trigger $trigger -Principal $principal -Force
+```
+
+token 需与固件 config.h 的 AGENT_TOKEN 一致；代理仅监听局域网；
+测试可设环境变量 `AGENT_DRYRUN=1` 只应答不真关机。

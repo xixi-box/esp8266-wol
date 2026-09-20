@@ -54,3 +54,7 @@ cd worker && npx wrangler deploy  # 部署
   /home/ha_config，非本仓库），走云端路径：rest_command.wol_wake + 台式机电源开关 +
   电脑状态实体 + 配置管理卡片（WiFi名/MAC/IP，密码只能走网页设置页——新版 HA 已
   移除 input_password 组件）。HA 实体 ID 为拼音（tai_shi_ji_*），引用时勿写英文名。
+- vivo 智慧生活接入（2026-09-20）：vivohomebridge 集成 + Mosquitto MQTT（Docker，仅本机 1883）。
+  台式机为 MQTT 设备（wol/desktop/set 指令、wol/desktop/state 状态，retain），自动化
+  wol_mqtt_command / wol_mqtt_state_sync 处理指令与状态同步。注意：vivo App 设备列表
+  会排除"无所属设备"的实体（模板开关不行），必须走 MQTT 设备路径。

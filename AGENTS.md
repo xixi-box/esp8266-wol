@@ -48,3 +48,9 @@ cd worker && npx wrangler deploy  # 部署
   不同即自动升级重启；弱信号（-83dBm）下大文件下载可能跨多个心跳周期重试；
   升级失败自动回退继续跑旧固件。自愈兜底：连续 20 次 TLS 握手失败自动重启。
 - 用户侧鉴权已加 HttpOnly Cookie（wol_token），URL token 仅首次使用后即从地址栏抹除。
+- 远程关机功能已按用户要求整体移除（2026-09-16 曾实现电脑端代理方案，用户觉得多余；
+  ICMP 放行规则 WoL-ICMP-ESP8266 保留用于状态监测，勿删）。
+- Home Assistant 集成（2026-09-20）：HA 为 Docker 部署在阿里云服务器（配置目录
+  /home/ha_config，非本仓库），走云端路径：rest_command.wol_wake + 台式机电源开关 +
+  电脑状态实体 + 配置管理卡片（WiFi名/MAC/IP，密码只能走网页设置页——新版 HA 已
+  移除 input_password 组件）。HA 实体 ID 为拼音（tai_shi_ji_*），引用时勿写英文名。

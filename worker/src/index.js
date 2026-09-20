@@ -256,15 +256,15 @@ export default {
       const hb = await env.CMD.get("heartbeat", "json");
       const pc = await env.CMD.get("pcstate", "json");
       const cmd = await env.CMD.get("cmd", "json");
+      const cfg = await env.CMD.get("config", "json");
       const online = !!hb && Date.now() - hb.ts < 6 * 60_000;
-      // 电脑在线取最新样本：pcstate（边沿变化时写）与心跳里的 pc（每 3 分钟），10 分钟内有效。
-      // 只靠边沿样本会在电脑长时间在线时因时间戳老化被误判离线。
       const pcTs = Math.max(pc?.ts ?? 0, hb?.ts ?? 0);
       const pcVal = (pc?.ts ?? 0) >= (hb?.ts ?? 0) ? pc?.online : hb?.pc;
       const pcOnline = (pcVal === true || pcVal === 1) && Date.now() - pcTs < 10 * 60_000;
       const waking = !pcOnline && cmd?.command === "wake" && cmd.ts && Date.now() - cmd.ts < 5 * 60_000;
       const pcState = pcOnline ? "online" : waking ? "waking" : "offline";
-      return json({ online, ts: hb?.ts ?? 0, pcOnline, pcTs, pcState });
+      return json({ online, ts: hb?.ts ?? 0, pcOnline, pcTs, pcState,
+                    ssid: cfg?.ssid ?? "", mac: cfg?.mac ?? "", pc_ip: cfg?.pc_ip ?? "" });
     }
 
     // ---- 状态 + 一键开机 + 设置页面（首次用 URL token 访问后种 Cookie，之后免 token） ----

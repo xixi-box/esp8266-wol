@@ -100,3 +100,41 @@ npx wrangler kv key put firmware.ver "Sep 16 2026 21:13:41" --binding=CMD --remo
 注意：下载 400+KB 固件对 WiFi 信号要求较高，弱信号下可能跨多个心跳周期重试；
 升级失败设备会继续运行旧固件，不会变砖。
 
+### 接入 Home Assistant（云端统一路径）
+
+适合 HA 不在目标电脑局域网的情况（如部署在云服务器上）。HA 的
+`configuration.yaml` 加：
+
+```yaml
+rest_command:
+  wol_wake:
+    url: "https://wol.wangshun.work/api/wake?token=<USER_TOKEN>"
+    method: post
+```
+
+开发者工具 → YAML → 重载 REST 命令（或重启 HA）后，即可在自动化/脚本中调用。
+配套脚本（`scripts:` 下）与仪表盘按钮卡片：
+
+```yaml
+script:
+  wake_desktop:
+    alias: 远程开机
+    sequence:
+      - service: rest_command.wol_wake
+```
+
+```yaml
+type: button
+name: 开机
+icon: mdi:power
+tap_action:
+  action: call-service
+service: script.turn_on
+target:
+  entity_id: script.wake_desktop
+```
+
+若 HA 就在目标电脑的局域网内，更推荐用 HA 原生 `wake_on_lan` 集成直发魔术包
+（毫秒级、零云端依赖、无需 token），本云端路径留给"HA 也不在家"的场景。
+可选：用 HA `rest` 平台每分钟读取 `/api/status`，把电脑在线状态也搬进仪表盘。
+

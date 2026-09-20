@@ -58,3 +58,7 @@ cd worker && npx wrangler deploy  # 部署
   台式机为 MQTT 设备（wol/desktop/set 指令、wol/desktop/state 状态，retain），自动化
   wol_mqtt_command / wol_mqtt_state_sync 处理指令与状态同步。注意：vivo App 设备列表
   会排除"无所属设备"的实体（模板开关不行），必须走 MQTT 设备路径。
+- MQTT 设备配置要点（2026-09-20 调试实录）：mqtt switch 的 payload_on/payload_off 是
+  **命令主题**载荷（wake/noop），state_topic 的值要用 state_on/state_off 声明（on/off），
+  缺了开关状态会永远 unknown。临时调试可用 http: api_password，但新版 HA 已移除该
+  选项，用完必须删（会级联搞挂 http/websocket/api）。
